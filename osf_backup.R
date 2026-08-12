@@ -697,7 +697,7 @@ get_redirect_safe <- function(url, dest_path = NULL, timeout_sec = REQUEST_TIMEO
 
     if (!use_auth && !had_auth) {
       # First hop already off-OSF: unusual, but do not send the token.
-      notify("  ~ request to non-OSF host %s -- sending without credentials",
+      notify("request to non-OSF host %s -- sending without credentials",
              host %||% "<unknown>")
     }
     had_auth <- had_auth || use_auth
@@ -721,13 +721,13 @@ get_redirect_safe <- function(url, dest_path = NULL, timeout_sec = REQUEST_TIMEO
     next_url  <- resolve_url(location, current)
     next_host <- parse_url(next_url)$hostname
     if (is_osf_host(host) && !is_osf_host(next_host)) {
-      notify("  . redirected off OSF to %s -- continuing without the token",
+      notify("redirected off OSF to %s -- continuing without the token",
              next_host %||% "<unknown>")
     }
     current <- next_url
   }
 
-  notify("  ! too many redirects (>%d) for %s", max_redirects, url)
+  notify("too many redirects (>%d) for %s", max_redirects, url)
   NULL
 }
 
@@ -810,7 +810,14 @@ with_retries <- function(req_fn, label) {
 
     explanation <- ""
     if (code == 401) {
-      explanation <- " -- check that OSF_PAT is valid and unexpired"
+      # Deliberately does NOT say "your token is invalid". A 401 from
+      # WaterButler usually means a connected add-on (GitHub, Dropbox, Google
+      # Drive) has lost its own authorisation on OSF -- the OSF token is fine,
+      # and every other request in the run succeeds with it. Blaming the token
+      # sends people off to re-issue a credential that was never the problem.
+      explanation <- paste0(" -- not authorised. Either the OSF token has ",
+                             "expired, or a connected storage add-on has lost ",
+                             "its own link to OSF")
     } else if (code == 403) {
       explanation <- " -- token lacks permission for this resource"
     } else if (code == 404) {
@@ -825,7 +832,7 @@ with_retries <- function(req_fn, label) {
     http_state$last_status <- code
 
     if (!identical(code, 404L)) {
-      notify("  ! %s failed with HTTP %d%s", label, code, explanation)
+      notify("%s failed with HTTP %d%s", label, code, explanation)
     }
     return(NULL)
   }
@@ -844,7 +851,7 @@ osf_get <- function(url, query = list()) {
     fromJSON(content(resp, as = "text", encoding = "UTF-8"),
              simplifyVector = FALSE),
     error = function(e) {
-      notify("  ! Could not parse JSON from %s: %s", url, conditionMessage(e))
+      notify("Could not parse JSON from %s: %s", url, conditionMessage(e))
       NULL
     }
   )
@@ -902,7 +909,7 @@ listing_ok <- function(x) {
 # Record a failed listing as a first-class problem, so it lands in the
 # verification report and forces a non-zero exit rather than passing silently.
 record_listing_failure <- function(node_id, what, indent = "") {
-  notify("%s  ! could not retrieve %s for %s -- this backup is INCOMPLETE",
+  notify("%scould not retrieve %s for %s -- this backup is INCOMPLETE",
          indent, what, node_id)
   verification_problems[[length(verification_problems) + 1]] <<- data.frame(
     node_id = node_id, provider = what, file = NA_character_,
@@ -933,14 +940,14 @@ write_json_atomic <- function(x, dest_path) {
     writeLines(json, part_path, useBytes = TRUE)
     TRUE
   }, error = function(e) {
-    notify("  ! could not write %s: %s", basename(dest_path),
+    notify("could not write %s: %s", basename(dest_path),
            conditionMessage(e))
     FALSE
   })
 
   if (!ok || !file.rename(part_path, dest_path)) {
     unlink(part_path)
-    notify("  ! failed to save %s (disk full, or no write permission?)",
+    notify("failed to save %s (disk full, or no write permission?)",
            dest_path)
     return(invisible(FALSE))
   }
@@ -1139,7 +1146,7 @@ list_files_recursive <- function(node_id, provider, folder_url = NULL,
                                    prefix = "", depth = 0,
                                    resource = "nodes") {
   if (depth > 25) {
-    notify("  ! folder nesting deeper than 25 levels in %s -- stopping descent",
+    notify("folder nesting deeper than 25 levels in %s -- stopping descent",
            node_id)
     # Must be marked incomplete. Returning a bare list() here would tell the
     # caller "this is the full inventory", and verification would then pass
@@ -1625,7 +1632,7 @@ write_local_checksums <- function(folder) {
     write.csv(record, file.path(folder, CHECKSUM_FILE),
               row.names = FALSE, na = "", fileEncoding = "UTF-8"),
     error = function(e)
-      notify("  ! could not write %s in %s: %s", CHECKSUM_FILE, folder,
+      notify("could not write %s in %s: %s", CHECKSUM_FILE, folder,
              conditionMessage(e))
   )
   invisible(record)
@@ -1959,7 +1966,7 @@ backup_registrations <- function(node_id, folder, indent = "") {
     # ...and a readable transcript of it.
     rendered <- tryCatch(write_preregistration_md(r, reg_dir),
                           error = function(e) {
-                            notify("%s    ! could not render preregistration.md: %s",
+                            notify("%s  could not render preregistration.md: %s",
                                    indent, conditionMessage(e))
                             FALSE
                           })
@@ -1993,7 +2000,7 @@ backup_registrations <- function(node_id, folder, indent = "") {
       res <- download_file(zip_url, dest)
       run_stats[[res]] <- run_stats[[res]] + 1
       if (identical(res, "failed")) {
-        notify("%s    ! could not download registration storage '%s'",
+        notify("%s  could not download registration storage '%s'",
                indent, pname)
         next
       }
@@ -2074,7 +2081,7 @@ backup_wikis_from <- function(wikis_url, node_id, folder, indent = "") {
     name <- w$attributes$name %||% w$id
     dl   <- w$links$download
     if (is.null(dl)) {
-      notify("%s  ! wiki page '%s' has no download link -- skipped", indent, name)
+      notify("%swiki page '%s' has no download link -- skipped", indent, name)
       next
     }
 
@@ -2284,7 +2291,7 @@ write_manifest <- function() {
                fileEncoding = "UTF-8")
     TRUE
   }, error = function(e) {
-    notify("  ! Could not write manifest: %s", conditionMessage(e))
+    notify("Could not write manifest: %s", conditionMessage(e))
     FALSE
   })
   if (ok) ui_info("Index written to %s", basename(manifest_path))
@@ -2328,7 +2335,7 @@ write_problems_found <- function() {
                fileEncoding = "UTF-8")
     ui_info("Problem details written to %s", basename(path))
   }, error = function(e) {
-    notify("  ! Could not write verification report: %s", conditionMessage(e))
+    notify("Could not write verification report: %s", conditionMessage(e))
   })
   sum(!report$issue %in% NON_FAILURE_ISSUES)
 }
@@ -2358,7 +2365,7 @@ backup_node <- function(node, dir_path, is_component = FALSE, depth = 0) {
   folder     <- file.path(dir_path, paste0(sanitize(title), "__", node_id))
   dir.create(folder, recursive = TRUE, showWarnings = FALSE)
   if (!dir.exists(folder)) {
-    notify("  ! could not create folder for %s (%s) -- skipping this project",
+    notify("could not create folder for %s (%s) -- skipping this project",
            title, node_id)
     record_listing_failure(node_id, "project folder (could not be created)",
                             indent)
@@ -2474,6 +2481,21 @@ backup_node <- function(node, dir_path, is_component = FALSE, depth = 0) {
     } else {
       ui_err("couldn't download %s from '%s'", basename(dest), provider_name,
              indent = paste0(indent, "  "))
+
+      # Add-on storage fails differently from OSF's own. When GitHub, Dropbox
+      # or Drive is connected to a project, OSF stores a credential for it; if
+      # that lapses, WaterButler answers 401 even though your OSF token is
+      # perfectly good. Name the real remedy instead of leaving the generic
+      # message to imply the token is at fault.
+      if (!identical(provider_name, "osfstorage")) {
+        ui_text("%s    This is an add-on, not OSF's own storage. Its link to",
+                indent)
+        ui_text("%s    OSF may have lapsed -- reconnect '%s' under the",
+                indent, provider_name)
+        ui_text("%s    project's Add-ons settings on osf.io, then re-run.",
+                indent)
+        ui_text("%s    Files stored on OSF itself are unaffected.", indent)
+      }
       next  # nothing on disk to verify
     }
 
