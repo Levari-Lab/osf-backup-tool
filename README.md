@@ -3,7 +3,7 @@
 *David Levari*
 
 
-Makes a complete local copy of everything in your OSF account — files, project descriptions, wiki pages, and registrations including your preregistration answers — and checks that the copy is correct.
+This script attempts to make a complete local copy of everything (public and private) in your OSF account — files, project descriptions, wiki pages, and registrations including your preregistration answers — and checks that the copy is correct.
 
 > ⚠️ **The backup contains your private projects and unpublished data.** Keep it off shared drives, don't put it in a public repository, and if your work involves human-subjects data, check that your IRB protocol and any data-use agreements allow storing it wherever you're about to put it — permission to keep data on OSF doesn't automatically extend to your laptop.
 
@@ -141,7 +141,7 @@ OSF_ACCESS_MODE=collaborator Rscript osf_backup.R
 | `OSF_REQUEST_DELAY` | `0.25` | Seconds between requests. |
 | `OSF_MAX_RETRIES` | `5` | Retries after a failed request. |
 | `OSF_TIMEOUT` | `60` | Seconds before giving up on a request. |
-| `OSF_DOWNLOAD_TIMEOUT` | `1800` | Seconds before giving up on a download. Raise for very large projects. |
+| `OSF_DOWNLOAD_TIMEOUT` | `3600` | Seconds before giving up on a download. Raise for very large projects. |
 | `OSF_MAX_RETRY_AFTER` | `900` | Longest wait when OSF asks us to slow down. |
 | `OSF_RATE_LIMIT_FLOOR` | `60` | Minimum wait after being rate-limited. |
 | `OSF_LOG_ENTRIES` | `100` | Activity-log entries saved per project (max 100). |
@@ -283,7 +283,12 @@ No. Files are only put into place once fully downloaded, so a partial file never
 Whenever you want a current copy — and particularly before a change that could cost you access, like leaving an institution, closing a lab, or handing a project over.
 
 **What if my projects are huge?**
-Fine, though a single very large project might need a longer download timeout: `OSF_DOWNLOAD_TIMEOUT=7200 Rscript osf_backup.R`.
+Mostly fine — a 1.6 GB archive with 250 files inside it has been tested — but a few things to know above roughly that size:
+
+- **Raise the download timeout** if an archive takes over an hour: `OSF_DOWNLOAD_TIMEOUT=7200 Rscript osf_backup.R`. The run tells you when a timeout is what failed, and names this setting.
+- **Downloads restart from the beginning if the connection drops.** Resume works per file, not per byte, so a very large archive on an unreliable connection may not finish. Nothing is corrupted — it just retries.
+- **Checking needs scratch space.** Verification extracts each file before hashing it, so a 20 GB file needs 20 GB free on your *temporary* volume — which on macOS is the startup disk, even if the backup is going to an external drive. If there isn't room, the archive is reported as `no_scratch_space` rather than checked; set `TMPDIR` to somewhere roomier and run again.
+- **Checking takes time.** Every run re-checks archives it already has, which for tens of gigabytes means substantial disk work. `OSF_VERIFY=0` skips it when you just want the files.
 
 **I got a message with a `!` in it.**
 That's a real problem worth reading. Check `problems_found.csv` in the backup folder. Lines starting with `.` or `~` are notes and retries, not failures.

@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 # ============================================================================
 # osf_backup.R
+# David Levari, August 2026
 #
 # Downloads a full local backup (metadata + files) of every OSF project you
 # own -- including sub-components -- using the OSF public API (v2) and the
@@ -55,7 +56,7 @@
 #   OSF_REQUEST_DELAY    seconds between API calls       [0.25]
 #   OSF_MAX_RETRIES      retries on 429/5xx/network      [5]
 #   OSF_TIMEOUT          per-API-request timeout, sec    [60]
-#   OSF_DOWNLOAD_TIMEOUT per-file download timeout, sec  [1800]
+#   OSF_DOWNLOAD_TIMEOUT per-file download timeout, sec  [3600]
 #   OSF_MAX_RETRY_AFTER  cap on obeying Retry-After, sec [900]
 #   OSF_RATE_LIMIT_FLOOR min wait after a bare 429, sec  [60]
 #   OSF_LOG_ENTRIES      activity-log entries per node   [100]
@@ -420,7 +421,10 @@ REQUEST_DELAY_SEC <- env_num_or("OSF_REQUEST_DELAY", 0.25)  # pause between call
 # Network behaviour. The defaults are deliberately conservative: this is
 # someone else's server, and a backup is not urgent.
 REQUEST_TIMEOUT_SEC  <- env_num_or("OSF_TIMEOUT", 60)    # per-request cap for API calls
-DOWNLOAD_TIMEOUT_SEC <- env_num_or("OSF_DOWNLOAD_TIMEOUT", 1800)  # large zips need room
+# An hour per archive. Only bites when something is genuinely stuck, and the
+# old 30-minute default was short enough that a legitimately large project
+# (roughly 4-5 GB on a home connection) would fail on time alone.
+DOWNLOAD_TIMEOUT_SEC <- env_num_or("OSF_DOWNLOAD_TIMEOUT", 3600)
 MAX_RETRIES          <- env_num_or("OSF_MAX_RETRIES", 5) # for 429 / 5xx / network errors
 BACKOFF_BASE_SEC     <- 2                                # exponential: 2, 4, 8, 16...
 BACKOFF_CAP_SEC      <- 120                              # cap on our OWN guessed backoff
@@ -754,14 +758,34 @@ with_retries <- function(req_fn, label) {
 
     # Network-level failure (DNS, dropped connection, timeout).
     if (inherits(resp, "error")) {
+      msg <- conditionMessage(resp)
+
+      # A timeout on a large archive is the one network failure with an obvious
+      # fix, and curl's wording ("Timeout was reached: Operation timed out
+      # after 1800000 milliseconds") does not suggest it. Name the setting
+      # rather than leaving someone to translate milliseconds into a remedy.
+      timed_out <- grepl("timed out|timeout", msg, ignore.case = TRUE)
+
       if (attempt >= MAX_RETRIES) {
-        notify("  ! %s failed after %d attempts: %s",
-               label, attempt + 1, conditionMessage(resp))
+        ui_err("%s failed after %d attempts: %s", label, attempt + 1, msg,
+               indent = "  ")
+        if (timed_out) {
+          ui_text("    Took longer than the %d-minute limit per download.",
+                  round(DOWNLOAD_TIMEOUT_SEC / 60))
+          ui_text("    For a very large project, allow more time and re-run:")
+          ui_text("      OSF_DOWNLOAD_TIMEOUT=7200 Rscript osf_backup.R")
+        }
         return(NULL)
       }
       wait <- retry_delay(attempt)
-      ui_wait("connection problem, retrying in %.0fs (attempt %d of %d)",
-              wait, attempt + 1, MAX_RETRIES, indent = "  ")
+      if (timed_out) {
+        ui_wait("timed out after %d min, retrying in %.0fs (attempt %d of %d)",
+                round(DOWNLOAD_TIMEOUT_SEC / 60), wait, attempt + 1,
+                MAX_RETRIES, indent = "  ")
+      } else {
+        ui_wait("connection problem, retrying in %.0fs (attempt %d of %d)",
+                wait, attempt + 1, MAX_RETRIES, indent = "  ")
+      }
       Sys.sleep(wait)
       attempt <- attempt + 1
       next
@@ -1381,6 +1405,37 @@ verify_against_listing <- function(zip_path, zip_contents, expected, provider,
       detail = paste0("could not create a temporary directory (", extract_dir,
                        ") -- archive contents were NOT checked; this is a local ",
                        "problem, not evidence about the backup"),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  # Is there room to extract the biggest file in this archive?
+  #
+  # Verification writes each member to the scratch directory before hashing it,
+  # so a 20 GB file needs 20 GB of scratch space. That space is on the TEMP
+  # volume, which on macOS is the boot disk -- not necessarily the volume the
+  # backup is going to. Someone archiving to a roomy external drive could fill
+  # their startup disk here, which the destination-space check would never see.
+  #
+  # Report it as "could not check" rather than pressing on: filling the boot
+  # volume is worse than an unverified archive, and quietly skipping the check
+  # would be worse than both.
+  sizes <- vapply(expected,
+                   function(f) suppressWarnings(as.numeric(f$size %||% NA)),
+                   numeric(1))
+  biggest <- suppressWarnings(max(sizes, na.rm = TRUE))
+  scratch_free <- disk_free_bytes(extract_dir)
+
+  if (is.finite(biggest) && !is.na(scratch_free) &&
+      scratch_free < biggest * 1.1) {
+    return(data.frame(
+      provider = provider, file = NA_character_, issue = "no_scratch_space",
+      detail = sprintf(paste0("largest file is %s but only %s free on the ",
+                               "temporary volume (%s), so contents were NOT ",
+                               "checked. Point TMPDIR at a volume with room ",
+                               "and re-run to verify this archive."),
+                        format_size(biggest), format_size(scratch_free),
+                        extract_dir),
       stringsAsFactors = FALSE
     ))
   }
