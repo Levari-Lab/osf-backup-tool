@@ -298,7 +298,15 @@ Careful — it contains everything from your private projects, not just the part
 
 ## Problems and changes
 
-**Bug reports are welcome.** Include the console output (especially any `!` lines), `scope_report.txt`, `problems_found.csv`, your R version and your operating system. Don't paste tokens, and check the output for private project titles before sharing it.
+**This is shared as-is and isn't actively maintained.** Issues are turned off, and there's no support. You're welcome to fork it and change whatever you need.
+
+**If something goes wrong,** the run tells you more than it might first appear. Lines starting with `!` are real problems; `.` and `~` are notes and retries. `problems_found.csv` names each failing file and why. `scope_report.txt` shows what the run was trying to capture, which is usually where a surprise turns out to have started.
+
+When a check fires and it isn't obvious whether the script or OSF is at fault, this settles it in one step — the response headers distinguish a redirect, an empty body, and a real error:
+
+```bash
+curl -sD - -o /dev/null -H "Authorization: Bearer $OSF_PAT" "<the url from the message>"
+```
 
 **Modifying the script?** `OSF_ONLY` and `OSF_LIMIT` narrow a run to a single project, so you aren't waiting on a full re-check to see whether a change worked. `Rscript -e 'parse("osf_backup.R")'` catches syntax errors without running anything — though it won't catch a wrong API field, which parses fine and then silently does nothing. A short real run is the test that matters.
 
