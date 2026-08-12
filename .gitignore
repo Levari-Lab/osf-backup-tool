@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# BACKUP OUTPUT -- never commit this.
+#
+# The default output directory sits next to the script, so it lands inside this
+# repository. It contains PRIVATE OSF projects and unpublished data, possibly
+# human-subjects material covered by an IRB protocol. Publishing it would be
+# hard to undo: git history retains deleted files, and anything pushed to a
+# public remote should be assumed permanently disclosed.
+#
+# If you point OSF_OUTPUT_DIR somewhere with a different name, add that name
+# here too -- this file cannot guess it.
+# ---------------------------------------------------------------------------
+osf_backup_results/
+osf_backup_results_public/
+
+# Older / alternate output directory names, kept so an existing backup made
+# before the default was renamed cannot be committed by accident.
+osf_backup/
+osf_backup_collab/
+
+# Backup artifacts, wherever they land.
+#
+# These catch the case where OSF_OUTPUT_DIR points at a differently-named
+# folder inside the repo: the directory rule above would not match it, but
+# these filenames are unmistakably backup output. Nothing in this project
+# legitimately produces a .zip, so excluding all of them is the safe default —
+# a downloaded archive is the single worst thing to publish by accident.
+**/*.zip
+**/backup_manifest.csv
+**/problems_found.csv
+**/problems_found_offline.csv
+**/verification_report.csv
+**/offline_verification_report.csv
+**/scope_report.txt
+**/checksums.csv
+**/metadata.json
+**/contributors.json
+**/logs.json
+**/wikis.json
+**/registration.json
+**/preregistration.md
+**/DOI.txt
+**/*.part
+**/*.partial.*
+
+# Credentials
+.Renviron
+.env
+
+# R / RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# macOS
+.DS_Store
+._*
+
+# Editors
+.vscode/
+.idea/
+*~
+*.swp
+
+# Local scratch tooling and notes, not part of the project
+rcheck.py
+scratch_readme.md
