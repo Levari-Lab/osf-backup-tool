@@ -122,7 +122,7 @@ If it's interrupted — you close the laptop, the wifi drops — just run it aga
 
 ## Settings
 
-You don't have to change anything. To change something, put it in front of the command:
+The script should work without changing the settings below, but if you'd like to tweak anything, put it in front of the terminal command, like this:
 
 ```bash
 OSF_ACCESS_MODE=collaborator Rscript osf_backup.R
@@ -155,7 +155,7 @@ If a run would capture *nothing* while your account has projects, it stops with 
 
 ### Making a shareable copy
 
-Everything else in this README warns you not to share the backup, because it contains private work. If you want a copy you *can* share:
+Everything else in this README warns you not to share the backup, because it contains private work. If you want a copy of only your public projects:
 
 ```bash
 OSF_VISIBILITY=public Rscript osf_backup.R
