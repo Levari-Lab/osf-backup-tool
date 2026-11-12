@@ -737,6 +737,21 @@ get_redirect_safe <- function(url, dest_path = NULL, timeout_sec = REQUEST_TIMEO
 #   4xx -- our fault (bad token, deleted node, no permission): do not retry
 is_retryable_status <- function(code) code == 429 || code >= 500
 
+# A 401 gets exactly ONE retry, which is a separate rule from the above.
+#
+# Normally retrying a rejected credential is pointless: the token is wrong and
+# will still be wrong in two seconds. But OSF's auth service runs behind
+# several backends, and a token created moments earlier has not necessarily
+# reached all of them -- so the first request can be refused and the next one
+# accepted, with nothing having changed. Observed in practice on a token
+# created seconds before the run.
+#
+# One retry makes that disappear. More than one would just slow down the
+# genuinely-expired case and bury the real message under repeated warnings,
+# which is why this is not folded into MAX_RETRIES.
+AUTH_RETRIES <- 1
+AUTH_RETRY_WAIT_SEC <- 3
+
 # Perform an HTTP request with retries, backoff and a timeout.
 # `req_fn` does the actual call; everything around it is the retry policy.
 # Status of the most recent completed request, so callers can distinguish a
@@ -746,6 +761,7 @@ http_state$last_status <- NA_integer_
 
 with_retries <- function(req_fn, label) {
   attempt <- 0
+  auth_attempt <- 0
   http_state$last_status <- NA_integer_
   repeat {
     Sys.sleep(REQUEST_DELAY_SEC)
@@ -808,6 +824,16 @@ with_retries <- function(req_fn, label) {
       next
     }
 
+    # One more go at a 401, in case the credential simply had not propagated.
+    # Counted separately so it cannot consume the ordinary retry budget.
+    if (code == 401L && auth_attempt < AUTH_RETRIES) {
+      ui_wait("not authorised -- trying once more in %ds, in case the token is new",
+              AUTH_RETRY_WAIT_SEC, indent = "  ")
+      Sys.sleep(AUTH_RETRY_WAIT_SEC)
+      auth_attempt <- auth_attempt + 1
+      next
+    }
+
     explanation <- ""
     if (code == 401) {
       # Deliberately does NOT say "your token is invalid". A 401 from
@@ -815,9 +841,11 @@ with_retries <- function(req_fn, label) {
       # Drive) has lost its own authorisation on OSF -- the OSF token is fine,
       # and every other request in the run succeeds with it. Blaming the token
       # sends people off to re-issue a credential that was never the problem.
-      explanation <- paste0(" -- not authorised. Either the OSF token has ",
-                             "expired, or a connected storage add-on has lost ",
-                             "its own link to OSF")
+      explanation <- paste0(" -- not authorised, even after a second attempt. ",
+                             "Most likely: the token has expired or was typed ",
+                             "wrong, or a connected storage add-on has lost ",
+                             "its own link to OSF. If you created this token ",
+                             "in the last minute, wait and run it again")
     } else if (code == 403) {
       explanation <- " -- token lacks permission for this resource"
     } else if (code == 404) {
@@ -2792,8 +2820,15 @@ main <- function() {
   me <- osf_get(paste0(API_BASE, "/users/me/"))
   my_user_id <- me$data$id
   if (is.null(my_user_id)) {
-    stop("Could not determine your OSF user id -- check that OSF_PAT is valid ",
-         "and has the osf.full_read scope.")
+    stop("Couldn't sign in to OSF.\n\n",
+         "  The reason is in the line above this one. The usual causes:\n\n",
+         "    - The token was created seconds ago and hasn't propagated yet.\n",
+         "      Wait a few seconds and run it again -- this is common and\n",
+         "      resolves on its own.\n",
+         "    - The token was copied incompletely, or has expired.\n",
+         "    - The token lacks the 'osf.full_read' scope.\n\n",
+         "  Tokens are at https://osf.io/settings/tokens/ (sign in first).",
+         call. = FALSE)
   }
   ui_ok("Signed in to OSF as user %s", my_user_id)
   ui_info("Looking up your projects...")

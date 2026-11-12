@@ -259,6 +259,9 @@ No — Windows, macOS, and Linux all work. The only difference is how you set th
 **`Rscript: command not found` — what now?**
 R is installed but your terminal can't find it. On macOS, reinstalling from [cloud.r-project.org](https://cloud.r-project.org/) usually fixes it. On Windows, use the full path, e.g. `& "C:\Program Files\R\R-4.4.1\bin\Rscript.exe" osf_backup.R` — adjust the version number to match yours.
 
+**It said "not authorised" but my token is new and correct.**
+Run it again. OSF's login service spreads across several servers, and a token created moments ago may not have reached all of them — so the first request is refused and the next one works, with nothing having changed. The script now retries once automatically for exactly this reason. If it still fails after that, the token has genuinely expired, was copied incompletely, or lacks the `osf.full_read` scope.
+
 **Can I run it from RStudio instead?**
 Yes. Use the **Terminal** tab (next to Console) and follow the instructions exactly as written. You can also run it in the Console with `Sys.setenv(OSF_PAT="your-token")` then `source("osf_backup.R")` — it won't close your session.
 
